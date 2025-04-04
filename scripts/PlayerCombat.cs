@@ -3,49 +3,109 @@ using UnityEngine;
 
 public class PlayerCombat : MonoBehaviour
 {
-    public float cooldownTime = 2f;
+    public float cooldownTime = 0.2f;
     private float nextAttackTime = 0f;
 
+    public GameObject miraPrefab; 
+    private GameObject miraInstance; 
 
-    //Indicador de ataque visual
     public TextMeshPro attackIndicator;
 
     public enum AttackType { Pedra, Papel, Tesoura}
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+
+    public GameObject ataquePedraPrefab;
+    public GameObject ataquePapelPrefab;
+    public GameObject ataqueTesouraPrefab;
+
+
+    public Transform spawnPoint; 
+    public float velocidadeAtaque = 10f;
+    public float distanciaMaxima = 5f;
+
+    public int maxCargas = 3;
+    private int cargasAtuais;
+    public float tempoRecarga = 2f;
+    private float tempoUltimoAtaque;
+
     void Start()
     {
-        
+        cargasAtuais = maxCargas;   
+
+
+        if (miraPrefab != null)
+        {
+            miraInstance = Instantiate(miraPrefab);
+            miraInstance.SetActive(true);   
+        }
+
+
     }
 
-    // Update is called once per frame
+
     void Update()
     {
+        AtualizarMira();
+
         if (Time.time >= nextAttackTime){
-
-            // Atacar Pedra
-            if(Input.GetKeyDown(KeyCode.Mouse0))
-                Attack(AttackType.Pedra);
-
-            //Atacar Papel
-            if(Input.GetKeyDown(KeyCode.Mouse1))
-                Attack(AttackType.Papel);
+            if( cargasAtuais > 0){
             
-            //Atacar Tesoura
-            if(Input.GetKeyDown(KeyCode.Mouse0) && Input.GetKeyDown(KeyCode.Mouse1))
-                Attack(AttackType.Tesoura);
+                // Atacar Pedra
+                if(Input.GetKeyDown(KeyCode.Mouse0) && !Input.GetKeyDown(KeyCode.Mouse1))
+                    Attack(AttackType.Pedra);
+
+                //Atacar Papel
+                if(Input.GetKeyDown(KeyCode.Mouse1) && !Input.GetKeyDown(KeyCode.Mouse0))
+                    Attack(AttackType.Papel);
+                
+                //Atacar Tesoura
+                if(Input.GetKeyDown(KeyCode.Mouse0) && Input.GetKeyDown(KeyCode.Mouse1))
+                    Attack(AttackType.Tesoura);
+
+            }
+
         }
+
+        if (Time.time - tempoUltimoAtaque >= tempoRecarga && cargasAtuais < maxCargas)
+        {
+            cargasAtuais++;
+            tempoUltimoAtaque = Time.time;
+        }
+
     }
 
 
     void Attack(AttackType attack){
 
+        if(cargasAtuais <= 0)
+            return; 
 
-        // Mostrar qual ataque foi indicado
         attackIndicator.text = attack.ToString();
         attackIndicator.color = GetAttackColor(attack);
 
-        Debug.Log($"Ataque usado: {attack}");
+        GameObject ataquePrefab = GetAttackPrefab(attack);
+
+        if(ataquePrefab != null){
+
+            Vector3 attackPosition = GetMouseWorldPosition();
+            attackPosition.y = spawnPoint.position.y;
+
+            Vector3 direction = (attackPosition - spawnPoint.position).normalized;
+
+            GameObject ataque = Instantiate(ataquePrefab, spawnPoint.position, Quaternion.identity);
+            ataque.transform.rotation = GetAttackRotation(attack, direction);
+
+            AtaqueMovimento ataqueMovimento = ataque.AddComponent<AtaqueMovimento>();
+            ataqueMovimento.ConfigurarAtaque(direction, velocidadeAtaque, distanciaMaxima);
+
+             ataque.transform.localScale *= 1.5f;
+
+            cargasAtuais--;
+            tempoUltimoAtaque = Time.time;
+
+        } else {
+            Debug.LogError("Prefab de ataque não atribuído no Inspector!");
+        }
 
         nextAttackTime = Time.time + cooldownTime;
 
@@ -60,7 +120,6 @@ public class PlayerCombat : MonoBehaviour
     }
 
 
-
     Color GetAttackColor(AttackType attack){
         switch(attack){
             case AttackType.Pedra: return Color.red;
@@ -68,5 +127,69 @@ public class PlayerCombat : MonoBehaviour
             case AttackType.Tesoura: return Color.green;
             default: return Color.white;
         }
+    }
+
+
+    GameObject GetAttackPrefab(AttackType attack){
+        switch (attack){
+            case AttackType.Pedra: return ataquePedraPrefab;
+            case AttackType.Papel: return ataquePapelPrefab;
+            case AttackType.Tesoura: return ataqueTesouraPrefab;
+            default: return null;
+        }
+    }
+
+
+    Quaternion GetAttackRotation(AttackType attack, Vector3 direction)
+    {
+
+        Quaternion baseRotation = Quaternion.LookRotation(direction, Vector3.up);
+
+        switch (attack)
+        {
+            case AttackType.Pedra:
+                return baseRotation * Quaternion.Euler(90, 0, 0); // Pedra deitada
+            case AttackType.Papel:
+                return baseRotation; // Papel segue a rotação normal
+            case AttackType.Tesoura:
+                return baseRotation * Quaternion.Euler(0, 0, 0); // Tesoura deitada
+            default:
+                return baseRotation;
+        }
+    }
+
+
+    Vector3 GetMouseWorldPosition()
+    {
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        
+        Vector3 playerHeight = new Vector3(0, transform.position.y, 0);
+        Plane groundPlane = new Plane(Vector3.up, playerHeight); 
+        float rayDistance;
+
+        if (groundPlane.Raycast(ray, out rayDistance))
+        {
+            return ray.GetPoint(rayDistance); 
+        }
+
+        return spawnPoint.position + transform.forward * distanciaMaxima;
+    }
+
+
+    void AtualizarMira() {
+
+    if (miraInstance != null)
+    {
+        Vector3 targetPosition = GetMouseWorldPosition();
+        Vector3 direction = (targetPosition - transform.position).normalized;
+
+        Vector3 miraPosition = transform.position + direction * Mathf.Min(Vector3.Distance(transform.position, targetPosition), distanciaMaxima);
+
+        miraPosition.y = 0.1f; 
+
+        miraInstance.transform.position = miraPosition;
+        miraInstance.transform.rotation = Quaternion.Euler(90, 0, 0);
+    }
+
     }
 }
